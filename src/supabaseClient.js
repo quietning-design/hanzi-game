@@ -174,10 +174,11 @@ export async function syncProgressToSupabase(stars, masteredCharsArray) {
 }
 
 // 5. 从 Supabase 云端读取小朋友的学习进度
-export async function loadProgressFromSupabase() {
+export async function loadProgressFromSupabase(customNickname) {
   if (!isSupabaseConfigured()) return null;
   const { url, anonKey, studentNickname } = getSupabaseConfig();
-  const encodedName = encodeURIComponent(studentNickname || '快乐小学生');
+  const targetName = (customNickname || studentNickname || '快乐小学生').trim();
+  const encodedName = encodeURIComponent(targetName);
 
   const endpoint = `${url}/rest/v1/hanzi_user_progress?student_nickname=eq.${encodedName}&select=*&limit=1`;
   const res = await fetch(endpoint, {
@@ -199,4 +200,36 @@ export async function loadProgressFromSupabase() {
     };
   }
   return null;
+}
+
+// 6. 获取全服学习排行榜 (按已掌握汉字数与金星数排序)
+export async function fetchLeaderboardFromSupabase() {
+  if (!isSupabaseConfigured()) return [];
+  const { url, anonKey } = getSupabaseConfig();
+
+  const endpoint = `${url}/rest/v1/hanzi_user_progress?select=*&order=stars.desc&limit=50`;
+  const res = await fetch(endpoint, {
+    method: 'GET',
+    headers: buildHeaders(anonKey)
+  });
+
+  if (!res.ok) {
+    throw new Error(`获取排行榜失败 (${res.status})`);
+  }
+
+  const rows = await res.json();
+  return (rows || [])
+    .map(r => ({
+      studentNickname: r.student_nickname || '匿名同学',
+      stars: Number(r.stars) || 0,
+      masteredCount: Array.isArray(r.mastered_chars) ? r.mastered_chars.length : 0,
+      masteredChars: Array.isArray(r.mastered_chars) ? r.mastered_chars : [],
+      updatedAt: r.updated_at
+    }))
+    .sort((a, b) => {
+      if (b.masteredCount !== a.masteredCount) {
+        return b.masteredCount - a.masteredCount;
+      }
+      return b.stars - a.stars;
+    });
 }
