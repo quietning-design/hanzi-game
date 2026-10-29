@@ -4,8 +4,8 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>汉字小森林 · 小学一年级500字趣味认字闯关乐园</title>
-  <script type="module" crossorigin src="./assets/index-BM8jB9KP.js"></script>
-  <link rel="stylesheet" crossorigin href="./assets/index-76H3NbPY.css">
+  <script type="module" crossorigin src="./assets/index-Cz_JvJCm.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-DpdDPYYI.css">
 </head>
 <body>
   <!-- 炫彩礼花特效画布 -->
@@ -35,14 +35,17 @@
         <span class="nav-emoji">📖</span>
         <span>汉字宝藏库</span>
       </button>
-      <button class="nav-btn" data-view="cloud">
-        <span class="nav-emoji">☁️</span>
-        <span>Supabase云同步</span>
+      <button class="nav-btn" data-view="leaderboard">
+        <span class="nav-emoji">🏆</span>
+        <span>学习排行榜</span>
       </button>
     </nav>
 
     <!-- 玩家成长与辅助状态栏 -->
     <div class="player-status-bar">
+      <button id="btn-student-profile" class="voice-toggle-btn active" title="点击修改学生姓名或查看云端排行">
+        🧒 快乐小学生
+      </button>
       <div class="stat-pill star-pill" title="累计获得的闯关星星">
         <span class="stat-icon">⭐</span>
         <span id="stat-stars">0</span>
@@ -51,9 +54,6 @@
         <span class="stat-icon">🎓</span>
         <span id="stat-mastered">0 / 500</span>
       </div>
-      <button id="btn-cloud-status" class="voice-toggle-btn" title="点击配置 Supabase 云数据库同步">
-        ☁️ 本地模式
-      </button>
       <button id="btn-toggle-voice" class="voice-toggle-btn active" title="开启或关闭语音朗读">
         🔊 语音开启
       </button>
