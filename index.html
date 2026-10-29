@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>汉字小森林 · 小学一年级500字趣味认字闯关乐园</title>
+  <script type="module" crossorigin src="./assets/index-DaN-Zxpj.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-76H3NbPY.css">
+</head>
+<body>
+  <!-- 炫彩礼花特效画布 -->
+  <canvas id="confetti-canvas"></canvas>
+
+  <!-- 顶部大字号导航栏 -->
+  <header class="top-header">
+    <div class="brand-area" id="btn-go-home" title="返回闯关岛地图">
+      <span class="brand-logo-icon">🌳</span>
+      <div class="brand-titles">
+        <h1>汉字小森林</h1>
+        <span class="brand-badge">一年级 500 字分级闯关乐园</span>
+      </div>
+    </div>
+
+    <!-- 主功能切换标签（超大按钮） -->
+    <nav class="main-nav">
+      <button class="nav-btn active" data-view="adventure">
+        <span class="nav-emoji">🗺️</span>
+        <span>闯关冒险岛</span>
+      </button>
+      <button class="nav-btn" data-view="arcade">
+        <span class="nav-emoji">🎮</span>
+        <span>游乐场大厅</span>
+      </button>
+      <button class="nav-btn" data-view="dictionary">
+        <span class="nav-emoji">📖</span>
+        <span>汉字宝藏库</span>
+      </button>
+      <button class="nav-btn" data-view="cloud">
+        <span class="nav-emoji">☁️</span>
+        <span>Supabase云同步</span>
+      </button>
+    </nav>
+
+    <!-- 玩家成长与辅助状态栏 -->
+    <div class="player-status-bar">
+      <div class="stat-pill star-pill" title="累计获得的闯关星星">
+        <span class="stat-icon">⭐</span>
+        <span id="stat-stars">0</span>
+      </div>
+      <div class="stat-pill learned-pill" title="已经点亮掌握的汉字数量">
+        <span class="stat-icon">🎓</span>
+        <span id="stat-mastered">0 / 500</span>
+      </div>
+      <button id="btn-cloud-status" class="voice-toggle-btn" title="点击配置 Supabase 云数据库同步">
+        ☁️ 本地模式
+      </button>
+      <button id="btn-toggle-voice" class="voice-toggle-btn active" title="开启或关闭语音朗读">
+        🔊 语音开启
+      </button>
+    </div>
+  </header>
+
+  <!-- 主视口容器（大屏自适应） -->
+  <main id="app-viewport" class="app-viewport">
+    <!-- 动态渲染区域 -->
+  </main>
+
+  <!-- 汉字详情弹出大卡片模态框（点击任意汉字时弹出） -->
+  <div id="char-modal-overlay" class="modal-overlay hidden">
+    <div class="char-detail-modal">
+      <button id="btn-close-modal" class="modal-close-btn" title="关闭">✖</button>
+      <div id="modal-body-content"></div>
+    </div>
+  </div>
+
+</body>
+</html>
