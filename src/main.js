@@ -234,6 +234,29 @@ export function fireConfetti() {
 // ============================================================================
 // 顶部状态栏与视图切换
 // ============================================================================
+let quizAdvanceTimer = null;
+
+function clearQuizTimer() {
+  if (quizAdvanceTimer) {
+    clearTimeout(quizAdvanceTimer);
+    quizAdvanceTimer = null;
+  }
+}
+
+export function showStarPopup(text = '+2 ⭐', clientX, clientY) {
+  const el = document.createElement('div');
+  el.className = 'floating-star-pop';
+  el.textContent = text;
+  const x = clientX || window.innerWidth / 2;
+  const y = clientY || window.innerHeight / 2;
+  el.style.left = `${x}px`;
+  el.style.top = `${y}px`;
+  document.body.appendChild(el);
+  setTimeout(() => {
+    el.remove();
+  }, 1200);
+}
+
 function updateHeaderStats() {
   const starEl = document.getElementById('stat-stars');
   const masteredEl = document.getElementById('stat-mastered');
@@ -255,6 +278,7 @@ function updateHeaderStats() {
 }
 
 function switchView(viewName, options = {}) {
+  clearQuizTimer();
   state.currentView = viewName;
   if (options.levelId !== undefined) {
     state.activeLevelId = options.levelId;
@@ -371,6 +395,8 @@ function renderAdventureMap(container) {
   visibleLevels.forEach(level => {
     const learnedInLevel = level.characters.filter(c => state.masteredChars.has(c.char)).length;
     const totalInLevel = level.characters.length;
+    const lvPercent = Math.round((learnedInLevel / totalInLevel) * 100);
+    const isAllDone = learnedInLevel === totalInLevel;
 
     const chipsHtml = level.characters
       .map(c => {
@@ -380,19 +406,24 @@ function renderAdventureMap(container) {
       .join('');
 
     html += `
-      <article class="level-card">
+      <article class="level-card ${isAllDone ? 'all-mastered' : ''}">
         <div>
           <div class="level-card-top">
             <div class="level-icon-badge" style="background: ${level.bgGradient}">
               ${level.icon}
             </div>
-            <div class="level-title-group">
-              <div style="font-size:14px; font-weight:900; color:#EA580C; margin-bottom:2px;">${level.stageName}</div>
+            <div class="level-title-group" style="flex:1;">
+              <div style="font-size:14px; font-weight:900; color:#EA580C; margin-bottom:2px;">
+                ${level.stageName} ${isAllDone ? '· 🏆 已满分通关' : ''}
+              </div>
               <h3>${level.title}</h3>
               <span>${level.subtitle} · 已掌握 ${learnedInLevel}/${totalInLevel}</span>
             </div>
           </div>
-          <p style="font-size: 18px; color: #475569; line-height: 1.5;">${level.description}</p>
+          <div class="level-mini-bar" title="本关掌握进度 ${lvPercent}%">
+            <div class="level-mini-bar-fill" style="width: ${lvPercent}%"></div>
+          </div>
+          <p style="font-size: 17px; color: #475569; line-height: 1.45;">${level.description}</p>
           <div class="level-char-preview">
             ${chipsHtml}
           </div>
@@ -400,7 +431,7 @@ function renderAdventureMap(container) {
 
         <div class="level-card-actions">
           <button class="btn-3d btn-learn" data-action="start-study" data-level="${level.id}">
-            📖 认字学堂 (20字)
+            📖 认字学堂
           </button>
           <button class="btn-3d btn-play" data-action="start-level-game" data-level="${level.id}">
             🎯 本关挑战
@@ -717,179 +748,198 @@ function startQuizGame(arena, scopeOptionsHtml) {
   renderNextQuizQuestion(arena, scopeOptionsHtml);
 }
 
-function generateQuizQuestion() {
-  const pool = getPoolCharacters();
-  const target = pool[Math.floor(Math.random() * pool.length)];
+  let recentTargets = [];
 
-  const distractors = [];
-  const candidatePool = pool.length >= 4 ? pool : ALL_CHARS;
-  while (distractors.length < 3) {
-    const item = candidatePool[Math.floor(Math.random() * candidatePool.length)];
-    if (
-      item.char !== target.char &&
-      !distractors.some(d => d.char === item.char)
-    ) {
-      distractors.push(item);
-    }
-  }
+  function generateQuizQuestion() {
+    const pool = getPoolCharacters();
+    // 优先抽取本轮尚未考过的汉字
+    const available = pool.filter(c => !recentTargets.includes(c.char));
+    const sourcePool = available.length > 0 ? available : pool;
+    const target = sourcePool[Math.floor(Math.random() * sourcePool.length)];
+    recentTargets.push(target.char);
+    if (recentTargets.length > 12) recentTargets.shift();
 
-  const options = [target, ...distractors].sort(() => Math.random() - 0.5);
-
-  let maskedWord = '';
-  let fullWord = target.words[0] || target.char;
-  if (fullWord.includes(target.char)) {
-    maskedWord = fullWord.replace(target.char, ' ( ？ ) ');
-  } else {
-    maskedWord = ` ( ？ ) ${fullWord}`;
-  }
-
-  return {
-    target,
-    options,
-    fullWord,
-    maskedWord
-  };
-}
-
-function renderNextQuizQuestion(arena, scopeOptionsHtml) {
-  if (state.quizRound > state.quizTotalRounds) {
-    renderQuizVictoryScreen(arena, scopeOptionsHtml);
-    return;
-  }
-
-  state.questionLocked = false;
-  const q = generateQuizQuestion();
-  state.currentQuestion = q;
-
-  let instructionText = '';
-  let stimulusHtml = '';
-  let autoSpeakStr = '';
-
-  if (state.arcadeMode === 'listen') {
-    instructionText = '👂 请仔细听语音，在下方找出正确的汉字吧！（点击喇叭可重听）';
-    stimulusHtml = `
-      <div class="prompt-giant-stimulus" id="btn-replay-prompt">
-        <span class="stimulus-speaker-icon">🔊</span>
-        <span class="stimulus-big-text">点我听音 (${q.target.pinyin})</span>
-      </div>
-    `;
-    autoSpeakStr = `请找出：${q.target.char}，${q.fullWord}的${q.target.char}`;
-  } else if (state.arcadeMode === 'picture') {
-    instructionText = '👀 看下面的图案和意思，它是哪一个汉字呢？';
-    stimulusHtml = `
-      <div class="prompt-giant-stimulus" id="btn-replay-prompt">
-        <span style="font-size: 86px;">${q.target.emoji}</span>
-        <div style="text-align: left;">
-          <div style="font-size: 32px; font-weight: 900; color: #92400E;">${q.target.meaning}</div>
-          <div style="font-size: 24px; color: #B45309; margin-top: 6px;">🔊 拼音提示：${q.target.pinyin}</div>
-        </div>
-      </div>
-    `;
-    autoSpeakStr = `${q.target.meaning}，请找出对应的汉字`;
-  } else {
-    instructionText = '🚂 词语小火车开来啦！括号里应该填哪个汉字呢？';
-    stimulusHtml = `
-      <div class="prompt-giant-stimulus" id="btn-replay-prompt">
-        <span style="font-size: 68px;">🚂</span>
-        <span class="stimulus-big-text">${q.maskedWord}</span>
-        <span style="font-size: 46px;">${q.target.emoji}</span>
-      </div>
-    `;
-    autoSpeakStr = `词语填空：${q.fullWord}，括号里应该填哪个字？`;
-  }
-
-  const optionsHtml = q.options
-    .map(
-      opt => `
-      <div class="hanzi-option-card" data-char="${opt.char}">
-        <span class="option-hanzi-text">${opt.char}</span>
-        <span class="option-sub-hint">${state.arcadeMode === 'listen' ? '点我选择' : opt.pinyin}</span>
-      </div>
-    `
-    )
-    .join('');
-
-  arena.innerHTML = `
-    <div>
-      <div class="game-header-bar">
-        <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
-          <span style="font-size: 22px; font-weight: 900;">📚 闯关级别/范围：</span>
-          <select id="arcade-scope-select" style="font-size: 20px; padding: 10px 18px; border-radius: 14px; border: 3px solid #CBD5E1; font-weight: 800; max-width: 420px;">
-            ${scopeOptionsHtml}
-          </select>
-        </div>
-
-        <div class="game-status-pills">
-          <span class="game-pill">🚩 第 ${state.quizRound} / ${state.quizTotalRounds} 题</span>
-          <span class="game-pill combo">🔥 连对 ${state.quizCombo} 次</span>
-        </div>
-      </div>
-
-      <div class="question-prompt-box">
-        <p class="prompt-instruction">${instructionText}</p>
-        ${stimulusHtml}
-      </div>
-
-      <div class="options-grid-large">
-        ${optionsHtml}
-      </div>
-    </div>
-
-    <div id="quiz-feedback-area" style="min-height: 68px;"></div>
-  `;
-
-  speakText(autoSpeakStr);
-
-  document.getElementById('btn-replay-prompt').addEventListener('click', () => {
-    speakText(autoSpeakStr);
-  });
-
-  document.getElementById('arcade-scope-select').addEventListener('change', e => {
-    state.arcadeScope = e.target.value;
-    renderArcadeHall(document.getElementById('app-viewport'));
-  });
-
-  arena.querySelectorAll('.hanzi-option-card').forEach(card => {
-    card.addEventListener('click', () => {
-      if (state.questionLocked) return;
-      const chosenChar = card.getAttribute('data-char');
-      const feedbackArea = document.getElementById('quiz-feedback-area');
-
-      if (chosenChar === q.target.char) {
-        state.questionLocked = true;
-        card.classList.add('correct');
-        state.quizScore++;
-        state.quizCombo++;
-        markCharMastered(q.target.char, 2);
-        playSoundEffect('ding');
-        fireConfetti();
-        speakText(`太棒啦！${q.target.char}，${q.fullWord}！`);
-
-        feedbackArea.innerHTML = `
-          <div class="feedback-banner success">
-            🎉 答对啦！【${q.target.char} (${q.target.pinyin})】—— ${q.target.sentence} (+2颗星星 ⭐)
-          </div>
-        `;
-
-        setTimeout(() => {
-          state.quizRound++;
-          renderNextQuizQuestion(arena, scopeOptionsHtml);
-        }, 1500);
-      } else {
-        card.classList.add('wrong');
-        state.quizCombo = 0;
-        playSoundEffect('boing');
-        speakText(`这是“${chosenChar}”字哦，再仔细找一找“${q.target.char}”吧！`);
-
-        feedbackArea.innerHTML = `
-          <div class="feedback-banner retry">
-            💪 刚才点的是【${chosenChar}】，别灰心，再试一次找出【${q.target.pinyin}】吧！
-          </div>
-        `;
+    const distractors = [];
+    const candidatePool = pool.length >= 4 ? pool : ALL_CHARS;
+    while (distractors.length < 3) {
+      const item = candidatePool[Math.floor(Math.random() * candidatePool.length)];
+      if (
+        item.char !== target.char &&
+        !distractors.some(d => d.char === item.char)
+      ) {
+        distractors.push(item);
       }
+    }
+
+    const options = [target, ...distractors].sort(() => Math.random() - 0.5);
+
+    let maskedWord = '';
+    let fullWord = target.words[0] || target.char;
+    if (fullWord.includes(target.char)) {
+      maskedWord = fullWord.replace(target.char, ' ( ？ ) ');
+    } else {
+      maskedWord = ` ( ？ ) ${fullWord}`;
+    }
+
+    return {
+      target,
+      options,
+      fullWord,
+      maskedWord
+    };
+  }
+
+  function renderNextQuizQuestion(arena, scopeOptionsHtml) {
+    clearQuizTimer();
+    if (state.quizRound > state.quizTotalRounds) {
+      renderQuizVictoryScreen(arena, scopeOptionsHtml);
+      return;
+    }
+
+    state.questionLocked = false;
+    const q = generateQuizQuestion();
+    state.currentQuestion = q;
+
+    let instructionText = '';
+    let stimulusHtml = '';
+    let autoSpeakStr = '';
+
+    if (state.arcadeMode === 'listen') {
+      instructionText = '👂 请仔细听语音，在下方找出正确的汉字吧！（点击喇叭或按空格键重听）';
+      stimulusHtml = `
+        <div class="prompt-giant-stimulus" id="btn-replay-prompt">
+          <span class="stimulus-speaker-icon">🔊</span>
+          <span class="stimulus-big-text">点我听音 (${q.target.pinyin})</span>
+        </div>
+      `;
+      autoSpeakStr = `请找出：${q.target.char}，${q.fullWord}的${q.target.char}`;
+    } else if (state.arcadeMode === 'picture') {
+      instructionText = '👀 看下面的图案和意思，它是哪一个汉字呢？';
+      stimulusHtml = `
+        <div class="prompt-giant-stimulus" id="btn-replay-prompt">
+          <span style="font-size: 82px;">${q.target.emoji}</span>
+          <div style="text-align: left;">
+            <div style="font-size: 30px; font-weight: 900; color: #92400E;">${q.target.meaning}</div>
+            <div style="font-size: 22px; color: #B45309; margin-top: 6px;">🔊 拼音提示：${q.target.pinyin}</div>
+          </div>
+        </div>
+      `;
+      autoSpeakStr = `${q.target.meaning}，请找出对应的汉字`;
+    } else {
+      instructionText = '🚂 词语小火车开来啦！括号里应该填哪个汉字呢？';
+      stimulusHtml = `
+        <div class="prompt-giant-stimulus" id="btn-replay-prompt">
+          <span style="font-size: 64px;">🚂</span>
+          <span class="stimulus-big-text">${q.maskedWord}</span>
+          <span style="font-size: 44px;">${q.target.emoji}</span>
+        </div>
+      `;
+      autoSpeakStr = `词语填空：${q.fullWord}，括号里应该填哪个字？`;
+    }
+
+    const optionsHtml = q.options
+      .map(
+        (opt, idx) => `
+        <div class="hanzi-option-card" data-char="${opt.char}" data-opt-idx="${idx}">
+          <span class="option-key-badge">${idx + 1}</span>
+          <span class="option-hanzi-text">${opt.char}</span>
+          <span class="option-sub-hint">${state.arcadeMode === 'listen' ? '点我选择' : opt.pinyin}</span>
+        </div>
+      `
+      )
+      .join('');
+
+    arena.innerHTML = `
+      <div>
+        <div class="game-header-bar">
+          <div style="display: flex; align-items: center; gap: 14px; flex-wrap: wrap;">
+            <span style="font-size: 21px; font-weight: 900;">📚 闯关级别/范围：</span>
+            <select id="arcade-scope-select" style="font-size: 19px; padding: 10px 18px; border-radius: 14px; border: 3px solid #CBD5E1; font-weight: 800; max-width: 420px;">
+              ${scopeOptionsHtml}
+            </select>
+          </div>
+
+          <div class="game-status-pills">
+            <span class="game-pill">🚩 第 ${state.quizRound} / ${state.quizTotalRounds} 题</span>
+            <span class="game-pill combo">🔥 连对 ${state.quizCombo} 次</span>
+          </div>
+        </div>
+
+        <div class="question-prompt-box">
+          <p class="prompt-instruction">${instructionText}</p>
+          ${stimulusHtml}
+        </div>
+
+        <div class="options-grid-large">
+          ${optionsHtml}
+        </div>
+      </div>
+
+      <div id="quiz-feedback-area" style="min-height: 68px;"></div>
+    `;
+
+    speakText(autoSpeakStr);
+
+    document.getElementById('btn-replay-prompt').addEventListener('click', () => {
+      speakText(autoSpeakStr);
     });
-  });
-}
+
+    document.getElementById('arcade-scope-select').addEventListener('change', e => {
+      state.arcadeScope = e.target.value;
+      renderArcadeHall(document.getElementById('app-viewport'));
+    });
+
+    arena.querySelectorAll('.hanzi-option-card').forEach(card => {
+      card.addEventListener('click', e => {
+        if (state.questionLocked) return;
+        const chosenChar = card.getAttribute('data-char');
+        const feedbackArea = document.getElementById('quiz-feedback-area');
+
+        if (chosenChar === q.target.char) {
+          state.questionLocked = true;
+          card.classList.add('correct');
+          state.quizScore++;
+          state.quizCombo++;
+          markCharMastered(q.target.char, 2);
+          playSoundEffect('ding');
+          fireConfetti();
+          showStarPopup('+2 ⭐', e.clientX, e.clientY);
+          speakText(`太棒啦！${q.target.char}，${q.fullWord}！`);
+
+          feedbackArea.innerHTML = `
+            <div class="feedback-banner success">
+              <span>🎉 答对啦！【${q.target.char} (${q.target.pinyin})】—— ${q.target.sentence}</span>
+              <button class="btn-3d btn-green" id="btn-Manual-Next" style="padding: 8px 18px; font-size: 18px;">下一题 ➡</button>
+            </div>
+          `;
+
+          const goNext = () => {
+            clearQuizTimer();
+            state.quizRound++;
+            renderNextQuizQuestion(arena, scopeOptionsHtml);
+          };
+
+          const manualBtn = document.getElementById('btn-Manual-Next');
+          if (manualBtn) {
+            manualBtn.addEventListener('click', goNext);
+          }
+
+          quizAdvanceTimer = setTimeout(goNext, 1600);
+        } else {
+          card.classList.add('wrong');
+          state.quizCombo = 0;
+          playSoundEffect('boing');
+          speakText(`这是“${chosenChar}”字哦，再仔细找一找“${q.target.char}”吧！`);
+
+          feedbackArea.innerHTML = `
+            <div class="feedback-banner retry">
+              💪 刚才点的是【${chosenChar}】，别灰心，再试一次找出【${q.target.pinyin}】吧！
+            </div>
+          `;
+        }
+      });
+    });
+  }
 
 function renderQuizVictoryScreen(arena, scopeOptionsHtml) {
   playSoundEffect('fanfare');
@@ -1260,14 +1310,22 @@ function openCharDetailModal(charStr) {
     tag.addEventListener('click', () => speakText(tag.getAttribute('data-speak')));
   });
 
-  document.getElementById('modal-toggle-master').addEventListener('click', () => {
+  document.getElementById('modal-toggle-master').addEventListener('click', e => {
     if (!state.masteredChars.has(item.char)) {
       markCharMastered(item.char, 1);
       playSoundEffect('ding');
       fireConfetti();
+      showStarPopup('+1 ⭐', e.clientX, e.clientY);
     }
     openCharDetailModal(item.char);
-    switchView(state.currentView);
+    const viewport = document.getElementById('app-viewport');
+    if (state.currentView === 'adventure') {
+      renderAdventureMap(viewport);
+    } else if (state.currentView === 'dictionary') {
+      renderDictionaryView(viewport);
+    } else if (state.currentView === 'study') {
+      renderStudyRoom(viewport);
+    }
   });
 }
 
@@ -1419,7 +1477,7 @@ async function renderLeaderboardView(container) {
     loadAndRenderList();
   });
 
-  document.getElementById('btn-save-student-name').addEventListener('click', async () => {
+  const saveNameHandler = async () => {
     const rawName = document.getElementById('input-student-name').value.trim();
     if (!rawName) {
       playSoundEffect('boing');
@@ -1438,10 +1496,8 @@ async function renderLeaderboardView(container) {
 
     showMsg(`⏳ 正在为【${rawName}】同步云端学习记录...`, 'info');
     try {
-      // 先查询云端是否已有该学生姓名的历史记录
       const existingRecord = await loadProgressFromSupabase(rawName);
       if (existingRecord && rawName !== oldName) {
-        // 如果切换到已有存档的学生，加载他的云端成绩
         state.stars = existingRecord.stars;
         state.masteredChars = new Set(existingRecord.masteredChars);
         saveProgress();
@@ -1452,7 +1508,6 @@ async function renderLeaderboardView(container) {
           'ok'
         );
       } else {
-        // 将当前成绩保存到该学生名下
         await syncProgressToSupabase(state.stars, Array.from(state.masteredChars));
         playSoundEffect('fanfare');
         fireConfetti();
@@ -1465,6 +1520,14 @@ async function renderLeaderboardView(container) {
     } catch (err) {
       playSoundEffect('boing');
       showMsg(`❌ 云端同步失败：${err.message}`, 'err');
+    }
+  };
+
+  document.getElementById('btn-save-student-name').addEventListener('click', saveNameHandler);
+  document.getElementById('input-student-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      saveNameHandler();
     }
   });
 
@@ -1512,6 +1575,44 @@ async function initApp() {
   document.getElementById('char-modal-overlay').addEventListener('click', e => {
     if (e.target.id === 'char-modal-overlay') {
       closeCharDetailModal();
+    }
+  });
+
+  // 全局键盘快捷键支持（方便课堂一体机与电脑键盘操作）
+  window.addEventListener('keydown', e => {
+    const tag = (e.target && e.target.tagName) || '';
+    if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+
+    const modalOverlay = document.getElementById('char-modal-overlay');
+    if (modalOverlay && !modalOverlay.classList.contains('hidden')) {
+      if (e.key === 'Escape') {
+        closeCharDetailModal();
+      }
+      return;
+    }
+
+    if (state.currentView === 'study') {
+      if (e.key === 'ArrowLeft') {
+        const prevBtn = document.getElementById('btn-prev-char');
+        if (prevBtn && !prevBtn.disabled) prevBtn.click();
+      } else if (e.key === 'ArrowRight') {
+        const nextBtn = document.getElementById('btn-next-char');
+        if (nextBtn) nextBtn.click();
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        const speakBtn = document.getElementById('btn-speak-char');
+        if (speakBtn) speakBtn.click();
+      }
+    } else if (state.currentView === 'arcade' && state.arcadeMode !== 'bubble') {
+      if (['1', '2', '3', '4'].includes(e.key)) {
+        const idx = Number(e.key) - 1;
+        const card = document.querySelector(`.hanzi-option-card[data-opt-idx="${idx}"]`);
+        if (card) card.click();
+      } else if (e.key === ' ') {
+        e.preventDefault();
+        const replayBtn = document.getElementById('btn-replay-prompt');
+        if (replayBtn) replayBtn.click();
+      }
     }
   });
 
