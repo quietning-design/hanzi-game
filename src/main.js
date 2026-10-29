@@ -3,10 +3,9 @@ import {
   getSupabaseConfig,
   saveSupabaseConfig,
   isSupabaseConfigured,
-  testSupabaseConnection,
-  seedAllCharactersToSupabase,
   syncProgressToSupabase,
-  loadProgressFromSupabase
+  loadProgressFromSupabase,
+  fetchLeaderboardFromSupabase
 } from './supabaseClient.js';
 
 // ============================================================================
@@ -238,14 +237,12 @@ export function fireConfetti() {
 function updateHeaderStats() {
   const starEl = document.getElementById('stat-stars');
   const masteredEl = document.getElementById('stat-mastered');
-  const cloudBtn = document.getElementById('btn-cloud-status');
+  const studentBtn = document.getElementById('btn-student-profile');
   if (starEl) starEl.textContent = state.stars;
   if (masteredEl) masteredEl.textContent = `${state.masteredChars.size} / ${ALL_CHARS.length}`;
-  if (cloudBtn) {
-    const connected = isSupabaseConfigured();
+  if (studentBtn) {
     const cfg = getSupabaseConfig();
-    cloudBtn.classList.toggle('active', connected);
-    cloudBtn.textContent = connected ? `☁️ 已连云端 (${cfg.studentNickname})` : '☁️ 本地模式';
+    studentBtn.textContent = `🧒 ${cfg.studentNickname || '快乐小学生'}`;
   }
 
   document.querySelectorAll('.nav-btn').forEach(btn => {
@@ -284,8 +281,8 @@ function switchView(viewName, options = {}) {
     renderArcadeHall(viewport);
   } else if (viewName === 'dictionary') {
     renderDictionaryView(viewport);
-  } else if (viewName === 'cloud') {
-    renderCloudSyncView(viewport);
+  } else if (viewName === 'leaderboard') {
+    renderLeaderboardView(viewport);
   }
   window.scrollTo({ top: 0, behavior: 'smooth' });
 }
@@ -1280,209 +1277,198 @@ function closeCharDetailModal() {
 }
 
 // ============================================================================
-// 视图 5：Supabase 云同步与 GitHub Pages 部署中心
+// 视图 5：学习排行榜与学生姓名档案（云端实时记录学习进度与成绩）
 // ============================================================================
-const SUPABASE_SQL_SCHEMA = `-- 在 Supabase 后台 -> SQL Editor -> New Query 粘贴并点击 Run：
-CREATE TABLE IF NOT EXISTS public.hanzi_characters (
-  global_index INT PRIMARY KEY,
-  char TEXT NOT NULL UNIQUE,
-  pinyin TEXT NOT NULL,
-  emoji TEXT DEFAULT '🀄',
-  stroke_count INT DEFAULT 4,
-  words JSONB DEFAULT '[]'::jsonb,
-  meaning TEXT DEFAULT '',
-  sentence TEXT DEFAULT '',
-  level_id INT NOT NULL,
-  level_title TEXT NOT NULL,
-  stage_id INT NOT NULL,
-  stage_name TEXT NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
+function getStudentBadgeByCount(masteredCount) {
+  if (masteredCount >= 400) return '👑 识字小状元';
+  if (masteredCount >= 300) return '🌟 造句小达人';
+  if (masteredCount >= 200) return '🚀 阅读小能手';
+  if (masteredCount >= 100) return '🐼 森林探险家';
+  return '🌱 识字小萌新';
+}
 
-CREATE TABLE IF NOT EXISTS public.hanzi_user_progress (
-  student_nickname TEXT PRIMARY KEY,
-  stars INT DEFAULT 0,
-  mastered_chars JSONB DEFAULT '[]'::jsonb,
-  updated_at TIMESTAMPTZ DEFAULT NOW()
-);
-
-ALTER TABLE public.hanzi_characters ENABLE ROW LEVEL SECURITY;
-ALTER TABLE public.hanzi_user_progress ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Public access hanzi_characters" ON public.hanzi_characters FOR ALL USING (true) WITH CHECK (true);
-CREATE POLICY "Public access hanzi_user_progress" ON public.hanzi_user_progress FOR ALL USING (true) WITH CHECK (true);`;
-
-function renderCloudSyncView(container) {
+async function renderLeaderboardView(container) {
   const cfg = getSupabaseConfig();
-  const connected = isSupabaseConfigured();
+  const currentName = cfg.studentNickname || '快乐小学生';
 
   container.innerHTML = `
-    <section class="hero-banner">
-      <div class="hero-banner-left">
-        <h2>☁️ Supabase 云数据库同步 & GitHub 前端部署中心</h2>
-        <p>前端静态页面由 <strong>GitHub Pages</strong> 托管，<strong>500 个汉字库与小朋友闯关进度</strong>实时存储在您的 <strong>Supabase</strong> 云端数据库！</p>
-      </div>
-      <div style="display:flex; gap:12px; align-items:center;">
-        <span class="stat-pill ${connected ? 'learned-pill' : 'star-pill'}">
-          ${connected ? '✅ 已配置 Supabase 连接' : '⚡ 当前为浏览器本地存储'}
-        </span>
-      </div>
-    </section>
-
-    <div class="cloud-panel-grid">
-      <!-- 左栏：连接配置与一键数据同步 -->
-      <div class="cloud-card">
-        <h3>🔑 第一步：连接您的 Supabase 项目</h3>
-        <p style="font-size: 17px; color: #64748B; margin-bottom: 18px;">
-          在 Supabase 后台左侧点击 <strong>Project Settings -> API</strong>，复制 <code>Project URL</code> 和 <code>anon public</code> 密钥填入下方：
+    <div class="student-profile-card">
+      <div>
+        <h2 style="font-size: 32px; font-weight: 900; color: #92400E; margin-bottom: 8px;">
+          🧒 我的学习小档案
+        </h2>
+        <p style="font-size: 20px; color: #B45309; font-weight: 700;">
+          输入你的真实姓名或昵称，系统会自动在云端记录你的认字进度和闯关金星成绩！
         </p>
-
-        <div class="cloud-form-group">
-          <label>🌐 Supabase Project URL：</label>
-          <input type="text" id="input-sb-url" class="cloud-input" placeholder="https://xxxxxxxxxxxx.supabase.co" value="${cfg.url}" />
-        </div>
-
-        <div class="cloud-form-group">
-          <label>🛡️ Supabase Anon Public Key：</label>
-          <input type="password" id="input-sb-key" class="cloud-input" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." value="${cfg.anonKey}" />
-        </div>
-
-        <div class="cloud-form-group">
-          <label>🧒 小朋友昵称 / 学号（用于跨电脑/平板同步个人学习进度）：</label>
-          <input type="text" id="input-sb-nickname" class="cloud-input" style="font-family: var(--font-family-main); font-weight: 800;" placeholder="例如：一年级小明" value="${cfg.studentNickname}" />
-        </div>
-
-        <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 22px;">
-          <button class="btn-3d btn-learn" id="btn-save-test-sb">
-            🔌 保存并测试连接
-          </button>
-          <button class="btn-3d btn-play" id="btn-seed-500-chars">
-            🚀 一键上传 500 汉字库到 Supabase
-          </button>
-        </div>
-
-        <div style="display: flex; flex-wrap: wrap; gap: 12px; margin-top: 14px;">
-          <button class="btn-3d btn-green" id="btn-push-progress">
-            ⬆️ 备份当前进度上云 (${state.masteredChars.size}字 / ${state.stars}⭐)
-          </button>
-          <button class="btn-3d btn-purple" id="btn-pull-progress">
-            ⬇️ 从云端恢复学习进度
-          </button>
-        </div>
-
-        <div id="cloud-status-log" class="cloud-log-banner info">
-          💡 提示：配置保存后，每次小朋友点亮新汉字或过关得星，都会自动同步到 Supabase 的 <code>hanzi_user_progress</code> 表中。
-        </div>
       </div>
 
-      <!-- 右栏：SQL 建表脚本与 GitHub 部署指南 -->
-      <div class="cloud-card">
-        <h3>🗄️ 第二步：在 Supabase 初始化数据表 (只需执行一次)</h3>
-        <p style="font-size: 17px; color: #64748B;">
-          首次使用请复制下方 SQL 脚本，在 Supabase 后台点击左侧 <strong>SQL Editor -> New Query</strong>，粘贴并点击 <strong>Run</strong>：
-        </p>
-
-        <div class="sql-code-box" id="sql-schema-text">${SUPABASE_SQL_SCHEMA}</div>
-
-        <button class="btn-3d btn-secondary" id="btn-copy-sql" style="width: 100%; margin-bottom: 24px;">
-          📋 一键复制 SQL 建表脚本
+      <div class="student-input-row">
+        <input
+          type="text"
+          id="input-student-name"
+          class="student-name-input"
+          placeholder="请输入学生姓名..."
+          value="${currentName}"
+        />
+        <button class="btn-3d btn-play" id="btn-save-student-name">
+          💾 保存姓名并同步成绩
         </button>
+      </div>
+    </div>
 
-        <div style="border-top: 3px dashed #E2E8F0; padding-top: 20px;">
-          <h3>🐙 第三步：前端发布到 GitHub Pages</h3>
-          <ol style="font-size: 17px; color: #334155; line-height: 1.75; padding-left: 22px; font-weight: 700;">
-            <li>本项目已为您内置好 GitHub Actions 自动发布工作流（<code>.github/workflows/deploy-pages.yml</code>）。</li>
-            <li>将本项目代码推送到您的 GitHub 仓库后，进入仓库 <strong>Settings -> Pages</strong>，将 <strong>Build and deployment -> Source</strong> 设为 <strong>GitHub Actions</strong>。</li>
-            <li>（可选）在 GitHub 仓库 <strong>Settings -> Secrets and variables -> Actions</strong> 中添加 <code>VITE_SUPABASE_URL</code> 和 <code>VITE_SUPABASE_ANON_KEY</code>，这样任何人打开您的 GitHub 网页都会自动连上您的 Supabase 数据库！</li>
-          </ol>
+    <div id="student-sync-msg" style="margin-bottom: 20px;"></div>
+
+    <div class="leaderboard-container">
+      <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding-bottom: 18px; border-bottom: 3px dashed #E2E8F0;">
+        <div>
+          <h3 style="font-size: 30px; font-weight: 900; color: #1E293B;">
+            🏆 一年级识字风云榜 (全班/全网实时排名)
+          </h3>
+          <p style="font-size: 18px; color: #64748B; margin-top: 4px;">
+            按已掌握汉字数量与闯关金星成绩综合排名
+          </p>
+        </div>
+        <button class="btn-3d btn-learn" id="btn-refresh-leaderboard">
+          🔄 刷新最新排行榜
+        </button>
+      </div>
+
+      <div id="leaderboard-table-body" class="leaderboard-list">
+        <div style="text-align: center; padding: 48px; font-size: 22px; color: #64748B; font-weight: 800;">
+          ⏳ 正在从云端加载同学们的学习成绩排行榜...
         </div>
       </div>
     </div>
   `;
 
-  const logEl = document.getElementById('cloud-status-log');
-  const setLog = (msg, type = 'info') => {
-    if (!logEl) return;
-    logEl.className = `cloud-log-banner ${type}`;
-    logEl.innerHTML = msg;
+  const msgBox = document.getElementById('student-sync-msg');
+  const showMsg = (text, type = 'ok') => {
+    if (!msgBox) return;
+    msgBox.innerHTML = `<div class="cloud-log-banner ${type}">${text}</div>`;
   };
 
-  const readInputsAndSave = () => {
-    const url = document.getElementById('input-sb-url').value;
-    const anonKey = document.getElementById('input-sb-key').value;
-    const studentNickname = document.getElementById('input-sb-nickname').value;
-    const saved = saveSupabaseConfig({ url, anonKey, studentNickname });
-    updateHeaderStats();
-    return saved;
-  };
-
-  document.getElementById('btn-copy-sql').addEventListener('click', () => {
-    navigator.clipboard.writeText(SUPABASE_SQL_SCHEMA).then(() => {
-      playSoundEffect('ding');
-      setLog('✅ SQL 建表脚本已复制到剪贴板！请前往 Supabase -> SQL Editor 粘贴并点击 Run。', 'ok');
-    });
-  });
-
-  document.getElementById('btn-save-test-sb').addEventListener('click', async () => {
-    readInputsAndSave();
-    setLog('⏳ 正在连接测试 Supabase 数据库...', 'info');
+  const loadAndRenderList = async () => {
+    const listBox = document.getElementById('leaderboard-table-body');
+    if (!listBox) return;
     try {
-      const res = await testSupabaseConnection();
-      playSoundEffect('ding');
-      setLog(`🎉 连接成功！当前 Supabase 云端 <code>hanzi_characters</code> 表中共有 <strong>${res.count}</strong> 个汉字。`, 'ok');
-    } catch (err) {
-      playSoundEffect('boing');
-      setLog(`❌ ${err.message}`, 'err');
-    }
-  });
-
-  document.getElementById('btn-seed-500-chars').addEventListener('click', async () => {
-    readInputsAndSave();
-    setLog('⏳ 正在将全部 5 大级别 500 个汉字批量上传到 Supabase 云端...', 'info');
-    try {
-      const res = await seedAllCharactersToSupabase(ALL_CHARS);
-      playSoundEffect('fanfare');
-      fireConfetti();
-      setLog(`🎉 上传大成功！已将全部 <strong>${res.uploaded} 个分级汉字（含拼音、笔画、词组、例句）</strong> 写入 Supabase 数据库！`, 'ok');
-    } catch (err) {
-      playSoundEffect('boing');
-      setLog(`❌ ${err.message}`, 'err');
-    }
-  });
-
-  document.getElementById('btn-push-progress').addEventListener('click', async () => {
-    const savedCfg = readInputsAndSave();
-    setLog(`⏳ 正在将【${savedCfg.studentNickname}】的学习进度同步到云端...`, 'info');
-    try {
+      // 先将当前学生的最新成绩同步上去
       await syncProgressToSupabase(state.stars, Array.from(state.masteredChars));
-      playSoundEffect('ding');
-      setLog(`✅ 已成功备份【${savedCfg.studentNickname}】的进度：掌握 <strong>${state.masteredChars.size}</strong> 字，金星 <strong>${state.stars}</strong> 颗！`, 'ok');
-    } catch (err) {
-      playSoundEffect('boing');
-      setLog(`❌ ${err.message}`, 'err');
-    }
-  });
+      const rows = await fetchLeaderboardFromSupabase();
+      const myName = getSupabaseConfig().studentNickname;
 
-  document.getElementById('btn-pull-progress').addEventListener('click', async () => {
-    const savedCfg = readInputsAndSave();
-    setLog(`⏳ 正在从 Supabase 查找【${savedCfg.studentNickname}】的学习存档...`, 'info');
-    try {
-      const record = await loadProgressFromSupabase();
-      if (!record) {
-        setLog(`ℹ️ 云端暂时还没有【${savedCfg.studentNickname}】的存档，点击左侧“备份当前进度上云”即可创建！`, 'info');
+      if (!rows || rows.length === 0) {
+        listBox.innerHTML = `
+          <div style="text-align: center; padding: 48px; font-size: 22px; color: #64748B;">
+            🌟 暂时还没有排行记录，快点击上方“保存姓名并同步成绩”成为第一名吧！
+          </div>
+        `;
         return;
       }
-      state.stars = record.stars;
-      state.masteredChars = new Set(record.masteredChars);
-      saveProgress();
-      playSoundEffect('fanfare');
-      fireConfetti();
-      setLog(`🎉 恢复成功！已加载【${record.studentNickname}】的云端进度：掌握 <strong>${state.masteredChars.size}</strong> 字，金星 <strong>${state.stars}</strong> 颗！`, 'ok');
+
+      listBox.innerHTML = rows
+        .map((item, idx) => {
+          const rank = idx + 1;
+          let rankDisplay = `第 ${rank} 名`;
+          let topClass = '';
+          if (rank === 1) {
+            rankDisplay = '🥇 冠军';
+            topClass = 'top-1';
+          } else if (rank === 2) {
+            rankDisplay = '🥈 亚军';
+            topClass = 'top-2';
+          } else if (rank === 3) {
+            rankDisplay = '🥉 季军';
+            topClass = 'top-3';
+          }
+
+          const isMe = item.studentNickname === myName;
+          const badge = getStudentBadgeByCount(item.masteredCount);
+          const percent = Math.round((item.masteredCount / ALL_CHARS.length) * 100);
+
+          return `
+            <div class="leaderboard-row ${topClass} ${isMe ? 'is-me' : ''}">
+              <div class="rank-badge">${rankDisplay}</div>
+              <div style="display: flex; align-items: center; gap: 10px;">
+                <span style="font-size: 26px;">🧒</span>
+                <span>${item.studentNickname} ${isMe ? '<strong style="color:#2563EB;">(我)</strong>' : ''}</span>
+              </div>
+              <div style="color: #15803D;">
+                🎓 识字 <strong>${item.masteredCount}</strong> / 500 (${percent}%)
+              </div>
+              <div style="color: #D97706;">
+                ⭐ 金星 <strong>${item.stars}</strong> 颗
+              </div>
+              <div class="leaderboard-hide-mobile">
+                <span class="student-title-tag">${badge}</span>
+              </div>
+            </div>
+          `;
+        })
+        .join('');
+    } catch (err) {
+      listBox.innerHTML = `
+        <div class="cloud-log-banner err">
+          ⚠️ 排行榜加载失败：${err.message}
+        </div>
+      `;
+    }
+  };
+
+  document.getElementById('btn-refresh-leaderboard').addEventListener('click', () => {
+    playSoundEffect('ding');
+    loadAndRenderList();
+  });
+
+  document.getElementById('btn-save-student-name').addEventListener('click', async () => {
+    const rawName = document.getElementById('input-student-name').value.trim();
+    if (!rawName) {
+      playSoundEffect('boing');
+      showMsg('⚠️ 请先输入你的名字或昵称哦！', 'err');
+      return;
+    }
+
+    const oldName = getSupabaseConfig().studentNickname;
+    const currentCfg = getSupabaseConfig();
+    saveSupabaseConfig({
+      url: currentCfg.url,
+      anonKey: currentCfg.anonKey,
+      studentNickname: rawName
+    });
+    updateHeaderStats();
+
+    showMsg(`⏳ 正在为【${rawName}】同步云端学习记录...`, 'info');
+    try {
+      // 先查询云端是否已有该学生姓名的历史记录
+      const existingRecord = await loadProgressFromSupabase(rawName);
+      if (existingRecord && rawName !== oldName) {
+        // 如果切换到已有存档的学生，加载他的云端成绩
+        state.stars = existingRecord.stars;
+        state.masteredChars = new Set(existingRecord.masteredChars);
+        saveProgress();
+        playSoundEffect('fanfare');
+        fireConfetti();
+        showMsg(
+          `🎉 欢迎回来，【${rawName}】！已为你恢复云端学习进度：掌握 <strong>${state.masteredChars.size}</strong> 字，累计 <strong>${state.stars}</strong> 颗金星！`,
+          'ok'
+        );
+      } else {
+        // 将当前成绩保存到该学生名下
+        await syncProgressToSupabase(state.stars, Array.from(state.masteredChars));
+        playSoundEffect('fanfare');
+        fireConfetti();
+        showMsg(
+          `🎉 保存成功！【${rawName}】的最新成绩（掌握 <strong>${state.masteredChars.size}</strong> 字，<strong>${state.stars}</strong> 颗金星）已记录到云端排行榜！`,
+          'ok'
+        );
+      }
+      await loadAndRenderList();
     } catch (err) {
       playSoundEffect('boing');
-      setLog(`❌ ${err.message}`, 'err');
+      showMsg(`❌ 云端同步失败：${err.message}`, 'err');
     }
   });
+
+  await loadAndRenderList();
 }
 
 // ============================================================================
@@ -1503,10 +1489,10 @@ async function initApp() {
     switchView('adventure');
   });
 
-  const cloudStatusBtn = document.getElementById('btn-cloud-status');
-  if (cloudStatusBtn) {
-    cloudStatusBtn.addEventListener('click', () => {
-      switchView('cloud');
+  const studentProfileBtn = document.getElementById('btn-student-profile');
+  if (studentProfileBtn) {
+    studentProfileBtn.addEventListener('click', () => {
+      switchView('leaderboard');
     });
   }
 
@@ -1531,7 +1517,7 @@ async function initApp() {
 
   switchView('adventure');
 
-  // 若已配置 Supabase，启动时自动从云端拉取最新学习进度合并
+  // 启动时自动从云端拉取最新学习进度合并并上报
   if (isSupabaseConfigured()) {
     try {
       const cloudRecord = await loadProgressFromSupabase();
@@ -1542,6 +1528,8 @@ async function initApp() {
         if (state.currentView === 'adventure') {
           renderAdventureMap(document.getElementById('app-viewport'));
         }
+      } else {
+        await syncProgressToSupabase(state.stars, Array.from(state.masteredChars));
       }
     } catch (e) {
       console.warn('启动时拉取云端存档跳过:', e);
