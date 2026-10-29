@@ -1354,3 +1354,124 @@ body {
   color: #1D4ED8;
   border: 2px solid #93C5FD;
 }
+/* ==========================================================================
+   学习排行榜与学生档案面板样式
+   ========================================================================== */
+.student-profile-card {
+  background: linear-gradient(135deg, #FFFBEB 0%, #FEF3C7 100%);
+  border: 4px solid #F59E0B;
+  border-radius: 30px;
+  padding: 28px 36px;
+  margin-bottom: 30px;
+  box-shadow: 0 10px 0 #D97706;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  flex-wrap: wrap;
+}
+
+.student-input-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.student-name-input {
+  padding: 14px 22px;
+  font-size: 24px;
+  font-weight: 900;
+  color: #1E293B;
+  background: #FFFFFF;
+  border: 4px solid #F59E0B;
+  border-radius: 20px;
+  outline: none;
+  width: 260px;
+}
+
+.student-name-input:focus {
+  border-color: #2563EB;
+}
+
+.leaderboard-container {
+  background: #FFFFFF;
+  border-radius: 32px;
+  padding: 32px 38px;
+  border: 5px solid #93C5FD;
+  box-shadow: var(--shadow-soft);
+}
+
+.leaderboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.leaderboard-row {
+  display: grid;
+  grid-template-columns: 90px 1.5fr 1fr 1fr 140px;
+  align-items: center;
+  gap: 16px;
+  padding: 18px 24px;
+  border-radius: 22px;
+  background: #F8FAFC;
+  border: 3px solid #E2E8F0;
+  font-size: 22px;
+  font-weight: 800;
+  transition: transform 0.15s ease;
+}
+
+@media (max-width: 860px) {
+  .leaderboard-row {
+    grid-template-columns: 64px 1fr 1fr;
+    gap: 10px;
+  }
+  .leaderboard-hide-mobile {
+    display: none;
+  }
+}
+
+.leaderboard-row:hover {
+  transform: translateX(6px);
+  border-color: #93C5FD;
+}
+
+.leaderboard-row.is-me {
+  background: #EFF6FF;
+  border-color: #3B82F6;
+  box-shadow: 0 6px 0 #3B82F6;
+}
+
+.leaderboard-row.top-1 {
+  background: linear-gradient(90deg, #FEF9C3 0%, #FFFFFF 100%);
+  border-color: #FACC15;
+}
+
+.leaderboard-row.top-2 {
+  background: linear-gradient(90deg, #F1F5F9 0%, #FFFFFF 100%);
+  border-color: #94A3B8;
+}
+
+.leaderboard-row.top-3 {
+  background: linear-gradient(90deg, #FFEDD5 0%, #FFFFFF 100%);
+  border-color: #FB923C;
+}
+
+.rank-badge {
+  font-size: 30px;
+  font-weight: 900;
+  text-align: center;
+}
+
+.student-title-tag {
+  display: inline-block;
+  padding: 6px 14px;
+  border-radius: 99px;
+  font-size: 16px;
+  font-weight: 900;
+  background: #DCFCE7;
+  color: #15803D;
+  text-align: center;
+}
