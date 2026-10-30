@@ -7,6 +7,7 @@ import {
   loadProgressFromSupabase,
   fetchLeaderboardFromSupabase
 } from './supabaseClient.js';
+import { createPathMode } from './pathMode.js';
 
 // ============================================================================
 // 全局状态与本地存档管理 (5大进阶级别 · 25大主题关卡 · 500核心生字)
@@ -15,6 +16,8 @@ const STORAGE_KEY = 'hanzi_forest_grade1_save_v1';
 const ALL_CHARS = getAllCharacters();
 
 const state = {
+  lessonStars: {}, // 地图闯关：每个关卡节点获得的星级
+  lesson: null, // 当前进行中的小课
   currentView: 'adventure', // 'adventure' | 'study' | 'arcade' | 'dictionary' | 'cloud'
   activeStageFilter: 1, // 1 | 2 | 3 | 4 | 5 | 'all'
   activeLevelId: 1,
@@ -41,6 +44,8 @@ const state = {
   dictSearchQuery: ''
 };
 
+let pathMode = null;
+
 function loadProgress() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
@@ -48,6 +53,7 @@ function loadProgress() {
       const parsed = JSON.parse(raw);
       state.stars = parsed.stars || 0;
       state.masteredChars = new Set(parsed.masteredChars || []);
+      state.lessonStars = parsed.lessonStars || {};
     } else {
       state.masteredChars = new Set(['一', '二', '三']);
       state.stars = 5;
@@ -63,7 +69,8 @@ function saveProgress() {
       STORAGE_KEY,
       JSON.stringify({
         stars: state.stars,
-        masteredChars: Array.from(state.masteredChars)
+        masteredChars: Array.from(state.masteredChars),
+        lessonStars: state.lessonStars
       })
     );
   } catch (e) {
@@ -272,7 +279,7 @@ function updateHeaderStats() {
     const view = btn.getAttribute('data-view');
     const isActive =
       view === state.currentView ||
-      (view === 'adventure' && state.currentView === 'study');
+      (view === 'adventure' && (state.currentView === 'study' || state.currentView === 'lesson'));
     btn.classList.toggle('active', isActive);
   });
 }
@@ -299,6 +306,8 @@ function switchView(viewName, options = {}) {
 
   if (viewName === 'adventure') {
     renderAdventureMap(viewport);
+  } else if (viewName === 'lesson') {
+    pathMode.renderLessonView(viewport);
   } else if (viewName === 'study') {
     renderStudyRoom(viewport);
   } else if (viewName === 'arcade') {
@@ -308,181 +317,15 @@ function switchView(viewName, options = {}) {
   } else if (viewName === 'leaderboard') {
     renderLeaderboardView(viewport);
   }
-  window.scrollTo({ top: 0, behavior: 'smooth' });
+  document.body.classList.toggle('in-lesson', viewName === 'lesson');
+  if (viewName !== 'adventure') window.scrollTo({ top: 0, behavior: 'smooth' });
 }
 
 // ============================================================================
-// 视图 1：闯关冒险岛地图 (5大进阶级别 · 25大主题关卡 · 500生字)
+// 视图 1：多邻国式地图闯关 (逻辑见 pathMode.js)
 // ============================================================================
 function renderAdventureMap(container) {
-  const totalCount = ALL_CHARS.length;
-  const masteredCount = state.masteredChars.size;
-  const percent = Math.round((masteredCount / totalCount) * 100);
-
-  // 构建 5 大进阶级别 + 全部关卡 切换栏
-  const stageCardsHtml = [
-    ...HANZI_STAGES.map(st => {
-      const stageChars = ALL_CHARS.filter(c => c.stageId === st.id);
-      const stageLearned = stageChars.filter(c => state.masteredChars.has(c.char)).length;
-      const isActive = state.activeStageFilter === st.id;
-      return `
-        <div class="stage-tab-card ${isActive ? 'active' : ''}" data-stage="${st.id}">
-          <span class="stage-tab-icon">${st.icon}</span>
-          <span class="stage-tab-title">第${st.id}阶：${st.name.split('：')[1]}</span>
-          <span class="stage-tab-sub">第${st.levelRange[0]}-${st.levelRange[1]}关 · 已学 ${stageLearned}/${stageChars.length}</span>
-        </div>
-      `;
-    }),
-    `
-      <div class="stage-tab-card ${state.activeStageFilter === 'all' ? 'active' : ''}" data-stage="all">
-        <span class="stage-tab-icon">🗺️</span>
-        <span class="stage-tab-title">全部 25 关全景</span>
-        <span class="stage-tab-sub">共 ${totalCount} 字 · 总览全岛</span>
-      </div>
-    `
-  ].join('');
-
-  const activeStageObj = HANZI_STAGES.find(s => s.id === state.activeStageFilter);
-  const visibleLevels =
-    state.activeStageFilter === 'all'
-      ? HANZI_LEVELS
-      : HANZI_LEVELS.filter(l => l.stageId === state.activeStageFilter);
-
-  const stageBannerHtml = activeStageObj
-    ? `
-      <div class="stage-summary-banner" style="background: ${activeStageObj.bgGradient}; border-color: ${activeStageObj.color};">
-        <div>
-          <div style="display:flex; align-items:center; gap:12px; margin-bottom:4px;">
-            <span style="font-size:32px;">${activeStageObj.icon}</span>
-            <h3 style="font-size:26px; font-weight:900; color:#0F172A;">${activeStageObj.name} (${activeStageObj.badge})</h3>
-          </div>
-          <p style="font-size:19px; color:#334155; font-weight:700;">${activeStageObj.description}</p>
-        </div>
-        <button class="btn-3d btn-play" data-action="start-stage-game" data-stage="${activeStageObj.id}">
-          🎯 挑战本阶 100 字综合闯关
-        </button>
-      </div>
-    `
-    : '';
-
-  let html = `
-    <section class="hero-banner">
-      <div class="hero-banner-left">
-        <h2>🌟 小学一年级 500 字分级识字冒险岛</h2>
-        <p>科学分为 <strong>5 大进阶级别、25 大主题关卡（每关 20 字，共 500 字）</strong>，循序渐进成为识字小状元！</p>
-      </div>
-      <div class="hero-progress-box">
-        <div class="hero-progress-label">
-          <span>🏆 500 字总掌握进度</span>
-          <span>${masteredCount} / ${totalCount} 字 (${percent}%)</span>
-        </div>
-        <div class="progress-track">
-          <div class="progress-fill" style="width: ${percent}%"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- 5大级别切换卡片 -->
-    <div class="stages-tabs-bar">
-      ${stageCardsHtml}
-    </div>
-
-    ${stageBannerHtml}
-
-    <div class="levels-grid">
-  `;
-
-  visibleLevels.forEach(level => {
-    const learnedInLevel = level.characters.filter(c => state.masteredChars.has(c.char)).length;
-    const totalInLevel = level.characters.length;
-    const lvPercent = Math.round((learnedInLevel / totalInLevel) * 100);
-    const isAllDone = learnedInLevel === totalInLevel;
-
-    const chipsHtml = level.characters
-      .map(c => {
-        const isMastered = state.masteredChars.has(c.char);
-        return `<div class="mini-hanzi-chip ${isMastered ? 'mastered' : ''}" data-char="${c.char}" title="点击点读【${c.char} (${c.pinyin})】">${c.char}</div>`;
-      })
-      .join('');
-
-    html += `
-      <article class="level-card ${isAllDone ? 'all-mastered' : ''}">
-        <div>
-          <div class="level-card-top">
-            <div class="level-icon-badge" style="background: ${level.bgGradient}">
-              ${level.icon}
-            </div>
-            <div class="level-title-group" style="flex:1;">
-              <div style="font-size:14px; font-weight:900; color:#EA580C; margin-bottom:2px;">
-                ${level.stageName} ${isAllDone ? '· 🏆 已满分通关' : ''}
-              </div>
-              <h3>${level.title}</h3>
-              <span>${level.subtitle} · 已掌握 ${learnedInLevel}/${totalInLevel}</span>
-            </div>
-          </div>
-          <div class="level-mini-bar" title="本关掌握进度 ${lvPercent}%">
-            <div class="level-mini-bar-fill" style="width: ${lvPercent}%"></div>
-          </div>
-          <p style="font-size: 17px; color: #475569; line-height: 1.45;">${level.description}</p>
-          <div class="level-char-preview">
-            ${chipsHtml}
-          </div>
-        </div>
-
-        <div class="level-card-actions">
-          <button class="btn-3d btn-learn" data-action="start-study" data-level="${level.id}">
-            📖 认字学堂
-          </button>
-          <button class="btn-3d btn-play" data-action="start-level-game" data-level="${level.id}">
-            🎯 本关挑战
-          </button>
-        </div>
-      </article>
-    `;
-  });
-
-  html += `</div>`;
-  container.innerHTML = html;
-
-  // 绑定级别切换
-  container.querySelectorAll('.stage-tab-card').forEach(tab => {
-    tab.addEventListener('click', () => {
-      const val = tab.getAttribute('data-stage');
-      state.activeStageFilter = val === 'all' ? 'all' : Number(val);
-      renderAdventureMap(container);
-    });
-  });
-
-  // 绑定整阶挑战按钮
-  const stageGameBtn = container.querySelector('[data-action="start-stage-game"]');
-  if (stageGameBtn) {
-    stageGameBtn.addEventListener('click', () => {
-      const stId = stageGameBtn.getAttribute('data-stage');
-      switchView('arcade', { arcadeScope: `stage-${stId}`, arcadeMode: 'listen' });
-    });
-  }
-
-  // 绑定学堂与单关挑战
-  container.querySelectorAll('[data-action="start-study"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const levelId = Number(btn.getAttribute('data-level'));
-      switchView('study', { levelId, studyIndex: 0 });
-    });
-  });
-
-  container.querySelectorAll('[data-action="start-level-game"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const levelId = Number(btn.getAttribute('data-level'));
-      switchView('arcade', { arcadeScope: `level-${levelId}`, arcadeMode: 'listen' });
-    });
-  });
-
-  container.querySelectorAll('.mini-hanzi-chip').forEach(chip => {
-    chip.addEventListener('click', () => {
-      const charStr = chip.getAttribute('data-char');
-      openCharDetailModal(charStr);
-    });
-  });
+  pathMode.renderAdventureMap(container);
 }
 
 // ============================================================================
@@ -1538,6 +1381,10 @@ async function renderLeaderboardView(container) {
 // 应用初始化入口
 // ============================================================================
 async function initApp() {
+  pathMode = createPathMode({
+    state, ALL_CHARS, HANZI_LEVELS, HANZI_STAGES,
+    speakText, playSoundEffect, fireConfetti, showStarPopup, saveProgress, switchView
+  });
   loadProgress();
   updateHeaderStats();
 
