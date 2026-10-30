@@ -1562,3 +1562,35 @@ body {
   color: #B45309;
   border: 3px solid #FDE047;
 }
+
+/* ---------- Mobile adjustments (≤600px) ---------- */
+@media (max-width: 600px) {
+  /* Header */
+  .top-header {
+    padding: 8px 12px !important;
+  }
+  .brand-logo-icon {
+    font-size: 28px !important;
+  }
+  .brand-titles {
+    display: none !important;
+  }
+  .nav-btn {
+    padding: 8px 14px !important;
+    font-size: 16px !important;
+  }
+  .player-status-bar {
+    gap: 6px !important;
+  }
+  .stat-pill {
+    padding: 6px 12px !important;
+    font-size: 16px !important;
+  }
+  .voice-toggle-btn {
+    padding: 6px 12px !important;
+    font-size: 14px !important;
+  }
+  .app-viewport {
+    padding: 12px 12px 48px !important;
+  }
+}
