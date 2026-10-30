@@ -1,1 +1,1 @@
-{"name":"manga-3panel-app","short_name":"manga-3panel-app","start_url":"./","display":"standalone","background_color":"#ffffff","lang":"en","scope":"./"}
+{"name":"汉字小森·一年级 500 字分级闯关乐","short_name":"汉字闯关","start_url":"./","display":"standalone","background_color":"#f0f9ff","lang":"en","scope":"./","orientation":"any","theme_color":"#317EFB","icons":[{"src":"icons/icon-192.svg","sizes":"192x192","type":"image/svg+xml"},{"src":"icons/icon-512.svg","sizes":"512x512","type":"image/svg+xml"}]}
