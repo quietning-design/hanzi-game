@@ -7,7 +7,20 @@ export default defineConfig({
   plugins: [
     VitePWA({
       srcDir: 'public',
-      manifest: true,
+      manifest: {
+        name: '汉字小森·一年级 500 字分级闯关乐',
+        short_name: '汉字闯关',
+        display: 'standalone',
+        orientation: 'any',
+        start_url: './',
+        scope: './',
+        theme_color: '#317EFB',
+        background_color: '#f0f9ff',
+        icons: [
+          { src: 'icons/icon-192.svg', sizes: '192x192', type: 'image/svg+xml' },
+          { src: 'icons/icon-512.svg', sizes: '512x512', type: 'image/svg+xml' }
+        ]
+      },
       registerType: 'autoUpdate',
       workbox: {
         runtimeCaching: [
